@@ -39,6 +39,13 @@ for await (const brut of createInterface({ input: process.stdin })) {
     g = { type: "LineString", coordinates: contour(g) };
   }
   entites.push({ type: "Feature", properties: proprietes, geometry: g });
+  // Une surface coupée entre plusieurs tuiles répéterait son nom : un seul point porte le nom.
+  const anneauSurface = LINEAIRES.has(t.aeroway) ? null : contour(g);
+  if (anneauSurface !== null && proprietes.label !== "") {
+    const n = anneauSurface.length;
+    const milieu = [anneauSurface.reduce((s, p) => s + p[0], 0) / n, anneauSurface.reduce((s, p) => s + p[1], 0) / n];
+    entites.push({ type: "Feature", properties: proprietes, geometry: { type: "Point", coordinates: milieu } });
+  }
   if ((t.aeroway === "parking_position" || t.aeroway === "gate") && g.type === "LineString") {
     entites.push({ type: "Feature", properties: proprietes, geometry: { type: "Point", coordinates: g.coordinates[Math.floor(g.coordinates.length / 2)] } });
   }
