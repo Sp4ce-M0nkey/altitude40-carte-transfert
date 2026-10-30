@@ -1,0 +1,54 @@
+name: Aéroports du monde
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  DEPOT: Sp4ce-M0nkey/altitude40-carte-monde
+jobs:
+  continent:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        region: [africa, antarctica, asia, australia-oceania, central-america, europe, north-america, russia, south-america]
+    steps:
+      - name: Extraction des aéroports
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          REGION: ${{ matrix.region }}
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool
+          python3 -m pip install -q huggingface_hub
+          # /mnt plutôt que le disque système : l'extrait de l'Europe dépasse 30 Go.
+          sudo mkdir -p /mnt/t && sudo chown "$USER" /mnt/t && cd /mnt/t
+          df -h /mnt | tail -1
+          curl -fsS --retry 5 --retry-all-errors -o in.osm.pbf "https://download.geofabrik.de/${REGION}-latest.osm.pbf"
+          osmium tags-filter in.osm.pbf nwr/aeroway -o f.osm.pbf
+          osmium export f.osm.pbf -f geojsonseq --add-unique-id=type_id -o "brut-${REGION}.geojsonseq"
+          gzip "brut-${REGION}.geojsonseq"
+          ls -l "brut-${REGION}.geojsonseq.gz"
+          hf upload "$DEPOT" "brut-${REGION}.geojsonseq.gz" "aeroports/brut-${REGION}.geojsonseq.gz" --repo-type dataset --commit-message "Aéroports bruts : ${REGION}"
+  tuiles:
+    needs: continent
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Construction des tuiles
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq build-essential libsqlite3-dev zlib1g-dev
+          python3 -m pip install -q huggingface_hub
+          git clone -q --depth 1 https://github.com/felt/tippecanoe.git /tmp/tippecanoe
+          make -C /tmp/tippecanoe -j4 tippecanoe > /dev/null
+          hf download "$DEPOT" --repo-type dataset --include "aeroports/brut-*" --local-dir brut
+          zcat brut/aeroports/*.gz | node aeroports.mjs > aeroports.geojsonl
+          ls -l aeroports.geojsonl
+          # Zoom 15 : au-delà, la carte agrandit ; rien n'est retiré pour tenir dans une tuile.
+          /tmp/tippecanoe/tippecanoe -o aeroports.pmtiles -l aeroports -Z8 -z15 --no-feature-limit --no-tile-size-limit -P aeroports.geojsonl 2>&1 | tail -3
+          ls -l aeroports.pmtiles
+          hf upload "$DEPOT" aeroports.pmtiles aeroports.pmtiles --repo-type dataset --commit-message "Couche mondiale des aéroports"
