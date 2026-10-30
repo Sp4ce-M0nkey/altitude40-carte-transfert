@@ -1,0 +1,39 @@
+name: Transfert complet
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  morceau:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      # Trois à la fois : assez rapide, sans charge inutile sur GitHub et Hugging Face.
+      max-parallel: 3
+      matrix:
+        part: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25]
+    env:
+      BUILD: "20261029"
+      PART: ${{ matrix.part }}
+      CHUNK: "5368709120"
+    steps:
+      - name: Téléchargement du morceau
+        run: |
+          URL="https://build.protomaps.com/${BUILD}.pmtiles"
+          START=$((PART * CHUNK))
+          END=$((START + CHUNK - 1))
+          NAME=$(printf 'monde-%s.part%05d' "$BUILD" "$PART")
+          echo "NAME=$NAME" >> "$GITHUB_ENV"
+          curl -fsS --retry 5 --retry-all-errors -H "Range: bytes=${START}-${END}" -o "$NAME" "$URL"
+          ls -l "$NAME"
+      - name: Envoi vers Hugging Face
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python3 -m pip install -q huggingface_hub
+          for i in 1 2 3 4 5; do
+            hf upload Sp4ce-M0nkey/altitude40-carte-monde "$NAME" "$NAME" --repo-type dataset --commit-message "Ajoute $NAME" && exit 0
+            sleep $((i * 60))
+          done
+          exit 1
