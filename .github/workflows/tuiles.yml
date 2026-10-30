@@ -1,0 +1,28 @@
+name: Tuiles des aéroports
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+env:
+  DEPOT: Sp4ce-M0nkey/altitude40-carte-monde
+jobs:
+  tuiles:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Construction des tuiles
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq build-essential libsqlite3-dev zlib1g-dev
+          python3 -m pip install -q huggingface_hub
+          git clone -q --depth 1 https://github.com/felt/tippecanoe.git /tmp/tippecanoe
+          make -C /tmp/tippecanoe -j4 tippecanoe > /dev/null
+          hf download "$DEPOT" --repo-type dataset --include "aeroports/brut-*" --local-dir brut
+          zcat brut/aeroports/*.gz | node aeroports.mjs > aeroports.geojsonl
+          ls -l aeroports.geojsonl
+          # Zoom 15 : au-delà, la carte agrandit ; rien n'est retiré pour tenir dans une tuile.
+          /tmp/tippecanoe/tippecanoe -o aeroports.pmtiles -l aeroports -Z8 -z15 --no-feature-limit --no-tile-size-limit -P aeroports.geojsonl 2>&1 | tail -3
+          ls -l aeroports.pmtiles
+          hf upload "$DEPOT" aeroports.pmtiles aeroports.pmtiles --repo-type dataset --commit-message "Couche mondiale des aéroports"
