@@ -25,7 +25,7 @@ jobs:
           # /mnt plutôt que le disque système : l'extrait de l'Europe dépasse 30 Go.
           sudo mkdir -p /mnt/t && sudo chown "$USER" /mnt/t && cd /mnt/t
           df -h /mnt | tail -1
-          curl -fsS --retry 5 --retry-all-errors -o in.osm.pbf "https://download.geofabrik.de/${REGION}-latest.osm.pbf"
+          curl -fsSL --retry 5 --retry-all-errors -o in.osm.pbf "https://download.geofabrik.de/${REGION}-latest.osm.pbf"
           osmium tags-filter in.osm.pbf nwr/aeroway -o f.osm.pbf
           osmium export f.osm.pbf -f geojsonseq --add-unique-id=type_id -o "brut-${REGION}.geojsonseq"
           gzip "brut-${REGION}.geojsonseq"
