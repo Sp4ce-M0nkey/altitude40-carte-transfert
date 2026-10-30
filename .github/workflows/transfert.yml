@@ -1,0 +1,40 @@
+name: Transfert de la carte
+on:
+  workflow_dispatch:
+    inputs:
+      build:
+        description: Construction Protomaps
+        default: "20261029"
+      part:
+        description: Numéro du morceau (à partir de 0)
+        default: "0"
+permissions:
+  contents: read
+jobs:
+  morceau:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      BUILD: ${{ inputs.build }}
+      PART: ${{ inputs.part }}
+      # 5 Gio : tient sur le disque d'une machine GitHub, effacé avec elle.
+      CHUNK: "5368709120"
+    steps:
+      - name: Téléchargement du morceau
+        run: |
+          URL="https://build.protomaps.com/${BUILD}.pmtiles"
+          SIZE=$(curl -fsSI "$URL" | tr -d '\r' | awk 'tolower($1)=="content-length:"{print $2}')
+          START=$((PART * CHUNK))
+          if [ "$START" -ge "$SIZE" ]; then echo "morceau hors du fichier"; exit 1; fi
+          END=$((START + CHUNK - 1))
+          NAME=$(printf 'monde-%s.part%05d' "$BUILD" "$PART")
+          echo "NAME=$NAME" >> "$GITHUB_ENV"
+          echo "fichier de $SIZE octets"
+          time curl -fsS --retry 5 --retry-all-errors -H "Range: bytes=${START}-${END}" -o "$NAME" "$URL"
+          ls -l "$NAME"
+      - name: Envoi vers Hugging Face
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python3 -m pip install -q huggingface_hub
+          time hf upload Sp4ce-M0nkey/altitude40-carte-monde "$NAME" "$NAME" --repo-type dataset --commit-message "Ajoute $NAME"
